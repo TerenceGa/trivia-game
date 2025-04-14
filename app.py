@@ -26,8 +26,7 @@ st.markdown("""
         color: white;
         padding: 10px;
         border-radius: 5px;
-        animation: fadeOut 1s ease forwards;
-        animation-delay: 1s;
+        /* Animation applied via class below */
     }
     .incorrect {
         background-color: #f44336;
@@ -37,13 +36,23 @@ st.markdown("""
     }
     .score-counter {
         position: fixed;
-        top: 10px;
-        right: 10px;
+        top: 20px;  /* Increased from 10px */
+        right: 20px; /* Increased from 10px */
         padding: 10px;
         background-color: #2196F3;
         color: white;
         border-radius: 5px;
         font-weight: bold;
+        z-index: 99; /* Ensure it stays on top */
+        text-align: right; /* Align text to the right within the box */
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); } /* Start invisible and slightly down */
+        to { opacity: 1; transform: translateY(0); }   /* Fade to visible and original position */
+    }
+    .fade-in {
+        animation: fadeIn 0.5s ease-out forwards; /* Apply the animation */
     }
     @keyframes fadeOut {
         from {opacity: 1;}
@@ -84,6 +93,10 @@ if 'selected_option' not in st.session_state:
     st.session_state.selected_option = None
 if 'correct_option' not in st.session_state:
     st.session_state.correct_option = None
+if 'score' not in st.session_state:
+    st.session_state.score = 0
+if 'current_streak' not in st.session_state:
+    st.session_state.current_streak = 0
 
 # Function to get a session token
 def get_session_token():
@@ -177,54 +190,81 @@ def fetch_questions(category, difficulty, question_type):
         return []
 
 # Function to start a new game
+# Function to start a new game
 def start_game():
-    category = st.session_state.category
-    difficulty = st.session_state.difficulty
-    question_type = st.session_state.question_type
-    
-    st.session_state.questions = fetch_questions(category, difficulty, question_type)
+    # ... (fetch questions logic remains the same) ...
+    st.session_state.questions = fetch_questions(st.session_state.category, st.session_state.difficulty, st.session_state.question_type)
     st.session_state.game_started = True
     st.session_state.current_question = 0
-    st.session_state.correct_answers = 0
+    # RESET score and streak
+    st.session_state.score = 0
+    st.session_state.current_streak = 0
+    # RESET other relevant states
+    st.session_state.correct_answers = 0 # Keep this if you still want the simple count/rate
     st.session_state.answered = False
     st.session_state.selected_option = None
     st.session_state.correct_option = None
+    st.session_state.current_options_order = [] # Reset options order
 
 # Function to restart the game with the same settings
 def restart_game():
     st.session_state.game_started = True
     st.session_state.current_question = 0
+    # RESET score and streak
+    st.session_state.score = 0
+    st.session_state.current_streak = 0
+    # RESET other relevant states
     st.session_state.correct_answers = 0
     st.session_state.answered = False
     st.session_state.selected_option = None
     st.session_state.correct_option = None
+    st.session_state.current_options_order = []
 
 # Function to return to the settings page
 def return_to_settings():
     st.session_state.game_started = False
     st.session_state.current_question = 0
-    st.session_state.correct_answers = 0
+    # RESET score and streak
+    st.session_state.score = 0
+    st.session_state.current_streak = 0
+    # RESET other relevant states
+    st.session_state.correct_answers = 0 # Resetting just in case
     st.session_state.questions = []
     st.session_state.answered = False
     st.session_state.selected_option = None
     st.session_state.correct_option = None
+    st.session_state.current_options_order = []
+    # Optionally reset token too if desired:
+    # st.session_state.pop('token', None)
 
+# Function to check the answer
 # Function to check the answer
 def check_answer(selected_option, correct_answer):
     st.session_state.answered = True
     st.session_state.selected_option = selected_option
     st.session_state.correct_option = correct_answer
-    
+
+    points = 0 # Points for this question
+    difficulty = st.session_state.get('difficulty', 'Easy') # Get current difficulty
+
     if selected_option == correct_answer:
-        st.session_state.correct_answers += 1
-        time.sleep(1)  # Small delay to show the feedback
-        st.session_state.current_question += 1
-        st.session_state.answered = False
-        st.session_state.selected_option = None
-        st.session_state.correct_option = None
+        # --- Dynamic Scoring ---
+        if difficulty == "Easy":
+            points = 10
+        elif difficulty == "Medium":
+            points = 20
+        elif difficulty == "Hard":
+            points = 30
+        else:
+            points = 10 # Default points
+
+        st.session_state.score += points
+        st.session_state.correct_answers += 1 # Keep track of raw count too
+
+        st.session_state.current_streak += 1
+
     else:
-        # For incorrect answer, wait for user to proceed
-        pass
+        st.session_state.current_streak = 0 
 
 # Function to proceed to next question
 def next_question():
@@ -258,158 +298,243 @@ category_mapping = {
 }
 
 # Main application logic
-def main():
-    # Title and header
-    st.title("🎮 Trivia Game 🎮")
-    st.markdown("Test your knowledge with fun trivia questions!")
-    
-    # Display score counter if the game is in progress
-    if st.session_state.game_started and len(st.session_state.questions) > 0:
-        st.markdown(
-            f"""
-            <div class="score-counter">
-                Correct: {st.session_state.correct_answers} / {st.session_state.current_question} 
-                (Questions: {st.session_state.current_question + 1}/10)
-            </div>
-            """,
-            unsafe_allow_html=True,
+# Make sure you have also updated the check_answer function as previously discussed!
+
+# Main application logic
+def display_settings():
+    """Displays the game configuration settings (category, difficulty, type) and the start button."""
+    st.markdown("### Configure Your Game")
+
+    # --- Instructions Expander ---
+    with st.expander("How to Play", expanded=False): # Set expanded=True to show by default
+        st.markdown("""
+        1.  **Choose your challenge:** Select a Category, Difficulty, and Question Type (Multiple Choice or True/False).
+        2.  **Start the game:** Hit the "START" button.
+        3.  **Answer questions:** Select your answer for each of the 10 questions presented.
+        4.  **Check feedback:** See if you were correct or incorrect. Correct answers earn points based on difficulty and build your 🔥 Streak!
+        5.  **Continue:** Click "Next Question" to move on.
+        6.  **Finish:** See your final score after 10 questions! Good luck!
+        """)
+        st.markdown("---") # Optional separator inside expander
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.session_state.category = st.selectbox(
+            "Select Category", options=list(category_mapping.keys()), index=0, key="settings_category"
         )
-    
-    # Settings screen
-    if not st.session_state.game_started:
-        # Create three columns for the dropdowns
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.session_state.category = st.selectbox(
-                "Select Category", 
-                options=list(category_mapping.keys()),
-                index=0
-            )
-        
-        with col2:
-            st.session_state.difficulty = st.selectbox(
-                "Select Difficulty", 
-                options=["Easy", "Medium", "Hard"],
-                index=0
-            )
-        
-        with col3:
-            st.session_state.question_type = st.selectbox(
-                "Select Type", 
-                options=["multiple", "boolean"],
-                index=0
-            )
-        
-        # Create a big green "Start" button
-        st.markdown(
-            """
-            <div style="display: flex; justify-content: center; margin-top: 50px;">
-                <div>Click Start to begin the game!</div>
-            </div>
-            """, 
-            unsafe_allow_html=True
+    with col2:
+        st.session_state.difficulty = st.selectbox(
+            "Select Difficulty", options=["Easy", "Medium", "Hard"], index=0, key="settings_difficulty"
         )
-        
-        if st.button("START", key="start_button", use_container_width=True, type="primary"):
-            start_game()
-            st.rerun()
-    
-    # Game screen
-    elif st.session_state.game_started and st.session_state.current_question < 10 and len(st.session_state.questions) > 0:
-        # Get the current question
-        current_q = st.session_state.questions[st.session_state.current_question]
-        
-        # Display the question
-        st.markdown(f'<div class="question-text">Question {st.session_state.current_question + 1}: {html.unescape(current_q["question"])}</div>', unsafe_allow_html=True)
-        
-        # For True/False questions
-        if current_q["type"] == "boolean":
-            col1, col2 = st.columns(2)
-            
-            # Check if already answered
-            if st.session_state.answered:
-                true_style = "correct" if "True" == current_q["correct_answer"] else "incorrect" if st.session_state.selected_option == "True" else ""
-                false_style = "correct" if "False" == current_q["correct_answer"] else "incorrect" if st.session_state.selected_option == "False" else ""
-                
-                with col1:
-                    st.markdown(f'<div class="{true_style}">True</div>', unsafe_allow_html=True)
-                
-                with col2:
-                    st.markdown(f'<div class="{false_style}">False</div>', unsafe_allow_html=True)
-                
-                # Show next button for incorrect answers
-                if st.session_state.selected_option != current_q["correct_answer"]:
-                    st.button("Next Question", on_click=next_question, type="primary")
-            else:
-                with col1:
-                    if st.button("True", key="true_btn", type="primary", use_container_width=True):
-                        check_answer("True", current_q["correct_answer"])
-                        st.rerun()
-                
-                with col2:
-                    if st.button("False", key="false_btn", type="primary", use_container_width=True):
-                        check_answer("False", current_q["correct_answer"])
-                        st.rerun()
-        
-        # For Multiple Choice questions
-        else:
-            # Create a list of all options
-            options = [html.unescape(current_q["correct_answer"])] + [html.unescape(ans) for ans in current_q["incorrect_answers"]]
-            random.shuffle(options)  # Shuffle to randomize the order
-            
-            # Check if already answered
-            if st.session_state.answered:
-                for option in options:
-                    option_style = ""
-                    if option == html.unescape(current_q["correct_answer"]):
-                        option_style = "correct"
-                    elif option == st.session_state.selected_option:
-                        option_style = "incorrect"
-                    
-                    st.markdown(f'<div class="{option_style}">{option}</div>', unsafe_allow_html=True)
-                
-                # Show next button for incorrect answers
-                if st.session_state.selected_option != html.unescape(current_q["correct_answer"]):
-                    st.button("Next Question", on_click=next_question, type="primary")
-            else:
-                # Display option buttons
-                for option in options:
-                    if st.button(option, key=f"option_{option}", use_container_width=True):
-                        check_answer(option, html.unescape(current_q["correct_answer"]))
-                        st.rerun()
-    
-    # Results screen (after 10 questions)
-    elif st.session_state.game_started and st.session_state.current_question >= 10:
-        st.markdown(
-            f"""
-            <div style="text-align: center; margin: 50px 0;">
-                <h2>Game Completed!</h2>
-                <h3>Your Score: {st.session_state.correct_answers} / 10</h3>
-                <p>Correctness Rate: {st.session_state.correct_answers / 10 * 100:.1f}%</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    with col3:
+        st.session_state.question_type = st.selectbox(
+            "Select Type", options=["multiple", "boolean"], index=0, key="settings_type"
         )
-        
+
+    st.markdown(
+        """
+        <div style="display: flex; justify-content: center; margin-top: 50px;">
+            <div>Click Start to begin the game!</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    if st.button("START", key="start_button", use_container_width=True, type="primary"):
+        start_game() # Assumes start_game() is defined elsewhere
+        st.rerun()
+
+# --- Helper Function: Display Game Header (Score, Streak, Progress) ---
+def display_game_header():
+    """Displays the score, streak, question progress, and progress bar."""
+    if not st.session_state.game_started or not st.session_state.questions:
+        return # Don't display if game hasn't started or no questions
+
+    total_questions_in_round = len(st.session_state.questions)
+    current_q_display_num = min(st.session_state.current_question + 1, total_questions_in_round)
+
+    score_text = f"Score: {st.session_state.score}"
+    streak_text = f"Streak: {st.session_state.current_streak} 🔥" if st.session_state.current_streak > 0 else "Streak: 0"
+    question_progress_text = f"Question: {current_q_display_num}/{total_questions_in_round}"
+
+    st.markdown(
+        f"""
+        <div class="score-counter">
+            {score_text} | {streak_text} <br> {question_progress_text}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Visual Progress Bar
+    progress_value = (st.session_state.current_question) / total_questions_in_round
+    st.progress(progress_value)
+    st.markdown("---") # Separator
+
+# --- Helper Function: Display Question Area ---
+def display_question_area(current_q):
+    """Displays the current question text, difficulty, and category."""
+    st.markdown(f'<div class="question-text fade-in">Question {st.session_state.current_question + 1}: {html.unescape(current_q["question"])}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="fade-in">*(Difficulty: {current_q["difficulty"].capitalize()}, Category: {html.unescape(current_q["category"])})*</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+# --- Helper Function: Display Answer Buttons ---
+def display_answer_buttons(current_q):
+    """Displays the True/False or Multiple Choice answer buttons."""
+    if current_q["type"] == "boolean":
         col1, col2 = st.columns(2)
-        
         with col1:
-            if st.button("Play Again", type="primary", use_container_width=True):
-                restart_game()
+            if st.button("True", key="true_btn", type="primary", use_container_width=True):
+                check_answer("True", current_q["correct_answer"]) # Assumes check_answer is defined
                 st.rerun()
-        
         with col2:
-            if st.button("Change Settings", type="secondary", use_container_width=True):
-                return_to_settings()
+            if st.button("False", key="false_btn", type="primary", use_container_width=True):
+                check_answer("False", current_q["correct_answer"])
                 st.rerun()
-    
-    # Error message if no questions were fetched
-    elif st.session_state.game_started and len(st.session_state.questions) == 0:
-        st.error("Failed to load questions. Please try again or select different options.")
-        if st.button("Back to Settings", type="primary"):
-            return_to_settings()
+    else: # Multiple Choice Buttons
+        correct_answer_unescaped = html.unescape(current_q["correct_answer"])
+        options = [correct_answer_unescaped] + [html.unescape(ans) for ans in current_q["incorrect_answers"]]
+        random.shuffle(options) # Assumes random is imported
+        st.session_state.current_options_order = options # Store order for feedback
+
+        for option in options:
+            # Ensure unique keys if options can be numerically similar (e.g., '1' vs 1)
+            button_key = f"option_{option}_{st.session_state.current_question}"
+            if st.button(option, key=button_key, use_container_width=True):
+                check_answer(option, correct_answer_unescaped)
+                st.rerun()
+
+# --- Helper Function: Display Feedback Area ---
+def display_feedback_area(current_q):
+    """Displays feedback (correct/incorrect styles), points message, streak message,
+       and Next button with fade-in animations.
+    """
+    correct_answer_unescaped = html.unescape(current_q["correct_answer"])
+    # Retrieve the order options were displayed in, needed for consistent feedback.
+    # Assumes 'current_options_order' was set in session_state when buttons were created.
+    options_in_order_displayed = st.session_state.get('current_options_order', [])
+
+    st.markdown("---") # Separator before feedback
+
+    # --- Display styled feedback for the options ---
+    if current_q["type"] == "boolean":
+        col1, col2 = st.columns(2)
+        # Determine styles based on correctness and user selection
+        true_style = "correct" if "True" == correct_answer_unescaped else "incorrect" if st.session_state.selected_option == "True" else ""
+        false_style = "correct" if "False" == correct_answer_unescaped else "incorrect" if st.session_state.selected_option == "False" else ""
+
+        with col1:
+            # Apply fade-in class to the markdown div
+            st.markdown(f'<div class="{true_style} fade-in" style="padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 10px;">True</div>', unsafe_allow_html=True)
+        with col2:
+             # Apply fade-in class to the markdown div
+            st.markdown(f'<div class="{false_style} fade-in" style="padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 10px;">False</div>', unsafe_allow_html=True)
+
+    else: # Multiple Choice Feedback
+        # Fallback if options order wasn't stored (feedback order might not match button order)
+        if not options_in_order_displayed:
+             options_in_order_displayed = [correct_answer_unescaped] + [html.unescape(ans) for ans in current_q["incorrect_answers"]]
+             st.warning("Option order for feedback might be inconsistent.", icon="⚠️") # Warn user if fallback is used
+
+        for i, option in enumerate(options_in_order_displayed):
+            # Determine style based on correctness and user selection
+            option_style = "correct" if option == correct_answer_unescaped else "incorrect" if option == st.session_state.selected_option else ""
+            # Apply fade-in class to the markdown div
+            # You could add a staggered delay using CSS style='animation-delay: {i * 0.05}s' but keeping it simple here.
+            st.markdown(f'<div class="{option_style} fade-in" style="padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 10px;">{option}</div>', unsafe_allow_html=True)
+
+    st.markdown("---") # Separator after option feedback
+
+    # --- Display points/streak message ---
+    if st.session_state.selected_option == correct_answer_unescaped:
+        # Calculate points earned (ensure difficulty is in session stacounter te)
+        difficulty = st.session_state.get('difficulty', 'Easy')
+        points_earned = 10 if difficulty == "Easy" else 20 if difficulty == "Medium" else 30
+        # Use st.success for positive feedback (includes icon and subtle animation)
+        st.success(f"Correct! +{points_earned} points", icon="✅")
+        # Display streak info if streak is greater than 1
+        if st.session_state.current_streak > 1:
+             # Use st.info for neutral supplementary info
+             st.info(f"Streak: {st.session_state.current_streak} 🔥")
+    else:
+        # Use st.error for negative feedback (includes icon and subtle animation)
+        st.error(f"Incorrect! The answer was: {correct_answer_unescaped}", icon="❌")
+        # Optionally mention if a streak was broken
+
+
+    # --- Next Question Button ---
+    # This button appears after feedback is shown.
+    # Assumes 'next_question' function is defined elsewhere and handles state update.
+    if st.button("Next Question", on_click=next_question, type="primary", use_container_width=True):
+        # Streamlit handles the rerun automatically after the on_click callback finishes.
+        pass
+
+
+# --- Helper Function: Display Results Screen ---
+def display_results():
+    """Displays the final score and options to play again or change settings."""
+    total_questions_in_round = len(st.session_state.questions)
+    st.progress(1.0) # Show full progress bar
+
+    st.markdown(
+        f"""
+        <div style="text-align: center; margin: 50px 0;">
+            <h2>Game Completed!</h2>
+            <h3>Final Score: {st.session_state.score} points</h3>
+            <p>({st.session_state.correct_answers} / {total_questions_in_round} correct answers)</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Play Again", type="primary", use_container_width=True):
+            restart_game() # Assumes restart_game is defined
+            st.rerun()
+    with col2:
+        if st.button("Change Settings", type="secondary", use_container_width=True):
+            return_to_settings() # Assumes return_to_settings is defined
             st.rerun()
 
+# --- Helper Function: Display Loading/Error State ---
+def display_loading_error():
+     """Displays an error message if questions couldn't be loaded."""
+     st.error("Failed to load questions. Please check your settings or try again later.")
+     if st.button("Back to Settings", type="primary"):
+         return_to_settings()
+         st.rerun()
+def main():
+    st.title("🎮 Trivia Game 🎮")
+    st.markdown("Test your knowledge with fun trivia questions!")
+
+    # --- Game State Controller ---
+
+    # State 1: Settings Screen
+    if not st.session_state.game_started:
+        display_settings()
+
+    # State 2: Game In Progress
+    elif st.session_state.game_started and st.session_state.questions and st.session_state.current_question < len(st.session_state.questions):
+        display_game_header()
+        current_q = st.session_state.questions[st.session_state.current_question]
+        display_question_area(current_q)
+
+        if st.session_state.answered:
+            display_feedback_area(current_q)
+        else:
+            display_answer_buttons(current_q)
+
+    # State 3: Results Screen
+    elif st.session_state.game_started and st.session_state.questions and st.session_state.current_question >= len(st.session_state.questions):
+        display_game_header() # Show final header state
+        display_results()
+
+    # State 4: Loading Error (No questions fetched)
+    elif st.session_state.game_started and not st.session_state.questions:
+        display_loading_error()
+
+# --- Entry Point ---
 if __name__ == "__main__":
+    # Make sure necessary imports (streamlit, html, random, requests, time) are at the top
+    # Make sure function definitions (fetch_questions, check_answer, next_question, etc.)
+    # and category_mapping are defined before main() is called.
     main()
